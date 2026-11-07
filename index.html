@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U.S. Migration Patterns During COVID-19 | CSE 6242 Team 245</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+    <style>
+        :root {
+            --bg-dark: #0b1329;
+            --bg-card: #141e38;
+            --bg-card-hover: #1c2b4e;
+            --border-color: #26375c;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-blue: #38bdf8;
+            --gt-gold: #eaaa00;
+            --inflow-color: #4ade80;
+            --outflow-color: #f87171;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-dark); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
+        
+        header { 
+            background: linear-gradient(135deg, #0f172a 0%, #141e38 100%); 
+            border-bottom: 2px solid var(--gt-gold); 
+            padding: 1rem 2rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+        }
+        .header-title-container h1 { font-size: 1.3rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.01em; }
+        .header-title-container p { font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem; }
+        .header-badges { display: flex; gap: 0.5rem; align-items: center; }
+        .tech-badge { background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: var(--accent-blue); padding: 0.25rem 0.55rem; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
+
+        .main-container { display: grid; grid-template-columns: 370px 1fr; gap: 1.25rem; padding: 1.25rem; flex: 1; max-width: 1800px; margin: 0 auto; width: 100%; }
+        
+        .sidebar, .dashboard-main { 
+            background-color: var(--bg-card); 
+            border: 1px solid var(--border-color); 
+            border-radius: 10px; 
+            padding: 1.25rem; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 1.1rem; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 0.45rem; }
+        label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+        
+        select, input[type="range"] { 
+            background: var(--bg-dark); 
+            border: 1px solid var(--border-color); 
+            color: var(--text-main); 
+            padding: 0.6rem; 
+            border-radius: 6px; 
+            font-size: 0.88rem; 
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        select:focus { border-color: var(--accent-blue); }
+
+        .timeline-slider-container { display: flex; align-items: center; gap: 0.8rem; }
+        .timeline-slider-container input { flex: 1; accent-color: var(--accent-blue); cursor: pointer; height: 5px; }
+
+        .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        .kpi-card { 
+            background: rgba(11, 19, 41, 0.7); 
+            border: 1px solid var(--border-color); 
+            padding: 0.85rem; 
+            border-radius: 6px; 
+            text-align: center;
+        }
+        .kpi-card .value { font-size: 1.2rem; font-weight: 700; color: var(--accent-blue); }
+        .kpi-card .label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-top: 0.25rem; }
+
+        .visualization-viewport { 
+            background: var(--bg-dark); 
+            border: 1px solid var(--border-color); 
+            border-radius: 8px; 
+            flex: 1; 
+            min-height: 560px; 
+            position: relative; 
+            overflow: hidden; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+
+        .team-footer { 
+            font-size: 0.74rem; 
+            color: var(--text-muted); 
+            border-top: 1px solid var(--border-color); 
+            padding-top: 0.85rem; 
+            line-height: 1.45; 
+        }
+
+        .corridor-item { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            font-size: 0.83rem; 
+            border-bottom: 1px solid var(--border-color); 
+            padding: 0.45rem 0.5rem; 
+            border-radius: 4px;
+        }
+        .corridor-item:hover { background: var(--bg-card-hover); }
+
+        .tooltip { 
+            position: absolute; 
+            background: rgba(11, 19, 41, 0.95); 
+            border: 1px solid var(--accent-blue); 
+            color: white; 
+            padding: 0.55rem 0.8rem; 
+            font-size: 0.78rem; 
+            border-radius: 6px; 
+            pointer-events: none; 
+            display: none; 
+            z-index: 20; 
+        }
+        
+        .flow-arc { fill: none; stroke-linecap: round; opacity: 0.6; transition: opacity 0.2s; }
+        .flow-arc:hover { opacity: 1; stroke-width: 4px !important; }
+        
+        .state-path { cursor: pointer; transition: fill 0.2s, stroke 0.2s; }
+        .state-path:hover { stroke: var(--gt-gold); stroke-width: 1.5px; }
+
+        .btn-reset { 
+            background: var(--gt-gold); 
+            color: #0b1329; 
+            border: none; 
+            padding: 0.4rem 0.8rem; 
+            border-radius: 4px; 
+            font-weight: 700; 
+            cursor: pointer; 
+            font-size: 0.76rem; 
+            display: none; 
+            margin-top: 0.5rem; 
+        }
+        .btn-reset:hover { filter: brightness(1.1); }
+
+        .legend-container { 
+            position: absolute; 
+            bottom: 16px; 
+            right: 16px; 
+            background: rgba(11, 19, 41, 0.9); 
+            border: 1px solid var(--border-color); 
+            padding: 0.65rem 0.85rem; 
+            border-radius: 6px; 
+            font-size: 0.72rem; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 0.35rem; 
+        }
+        .legend-item { display: flex; align-items: center; gap: 0.5rem; }
+        .legend-color { width: 14px; height: 3px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-title-container">
+            <h1>U.S. Migration Patterns During COVID-19</h1>
+            <p>CSE 6242: Data & Visual Analytics &bull; Georgia Institute of Technology (OMS Analytics)</p>
+        </div>
+        <div class="header-badges">
+            <span class="tech-badge">D3.js v7</span>
+            <span class="tech-badge">TopoJSON</span>
+            <div id="active-year-display" style="font-size: 1.5rem; font-weight: 800; color: var(--gt-gold); margin-left: 0.5rem;">2019</div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Sidebar Controls & Stats -->
+        <div class="sidebar">
+            <div class="control-group">
+                <label for="dataset-select">Dataset Granularity</label>
+                <select id="dataset-select">
+                    <option value="state">State-to-State Flows (2017–2023)</option>
+                    <option value="county">County-to-County Flows</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="metric-select">Analysis Metric</label>
+                <select id="metric-select">
+                    <option value="inflow">Total Inflow Volume</option>
+                    <option value="outflow">Total Outflow Volume</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Timeline Selection (<span id="year-label" style="color:var(--accent-blue);">2019</span> Baseline)</label>
+                <div class="timeline-slider-container">
+                    <input type="range" id="year-slider" min="2017" max="2023" value="2019" step="1">
+                </div>
+            </div>
+
+            <div class="control-group" id="selection-info-group">
+                <label>Geographic Focus</label>
+                <div id="selected-state-display" style="font-size: 1.05rem; font-weight: 700; color: var(--gt-gold);">National Overview</div>
+                <button id="reset-btn" class="btn-reset">↺ Reset National Map</button>
+            </div>
+
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="value" id="kpi-total-flows">--</div>
+                    <div class="label">Total Recorded Moves</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="value" id="kpi-top-hub">--</div>
+                    <div class="label">Top Migration Hub</div>
+                </div>
+            </div>
+
+            <div class="control-group" style="flex:1;">
+                <label id="rankings-title">Top Migration Corridors</label>
+                <div id="rankings-list" style="font-size: 0.83rem; color: var(--text-muted); overflow-y: auto; max-height: 200px; display: flex; flex-direction: column; gap: 0.3rem;">
+                    Loading migration data...
+                </div>
+            </div>
+
+            <div class="team-footer">
+                <strong>Team 245:</strong> Emmanuel Cardenas, Huan Tran, Isra Naweed, Nathan Rowe, Xinyi He<br>
+                <span style="font-size: 0.68rem; opacity: 0.85;">Source: U.S. Census Bureau & IRS Migration Data (2017–2023)</span>
+            </div>
+        </div>
+
+        <!-- Main Visualization Viewport -->
+        <div class="dashboard-main">
+            <div class="visualization-viewport" id="map-container">
+                <svg id="canvas" width="100%" height="100%" viewBox="0 0 960 600"></svg>
+                <div class="tooltip" id="tooltip"></div>
+                <div class="legend-container">
+                    <div class="legend-item"><div class="legend-color" style="background: var(--accent-blue);"></div> Flow Arc</div>
+                    <div class="legend-item"><div class="legend-color" style="background: var(--inflow-color);"></div> State Inflow</div>
+                    <div class="legend-item"><div class="legend-color" style="background: var(--outflow-color);"></div> State Outflow</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stateData = [], countyData = [], countyLookup = {};
+        let currentYear = 2019, selectedStateAbbr = null;
+        let projection, path;
+
+        const fipsToAbbr = {
+            "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO", "09": "CT", "10": "DE",
+            "12": "FL", "13": "GA", "15": "HI", "16": "ID", "17": "IL", "18": "IN", "19": "IA", "20": "KS",
+            "21": "KY", "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN", "28": "MS",
+            "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH", "34": "NJ", "35": "NM", "36": "NY",
+            "37": "NC", "38": "ND", "39": "OH", "40": "OK", "41": "OR", "42": "PA", "44": "RI", "45": "SC",
+            "46": "SD", "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA", "54": "WV",
+            "55": "WI", "56": "WY"
+        };
+
+        const stateCoords = {
+            "AL": [-86.7911, 32.8067], "AK": [-152.4044, 61.3707], "AZ": [-111.4312, 33.7298],
+            "AR": [-92.3731, 34.9697], "CA": [-119.6816, 36.1162], "CO": [-105.3111, 39.0598],
+            "CT": [-72.7554, 41.5978], "DE": [-75.5071, 39.3185], "FL": [-81.6868, 27.7663],
+            "GA": [-83.6431, 33.0406], "HI": [-157.4983, 21.0943], "ID": [-114.4788, 44.2405],
+            "IL": [-88.9861, 40.3495], "IN": [-86.2583, 39.8494], "IA": [-93.2105, 42.0115],
+            "KS": [-96.7265, 38.5266], "KY": [-84.6701, 37.6681], "LA": [-91.8678, 31.1695],
+            "ME": [-69.3819, 44.6939], "MD": [-76.8021, 39.0639], "MA": [-71.5301, 42.2302],
+            "MI": [-84.5361, 43.3266], "MN": [-93.9002, 45.6945], "MS": [-89.6787, 32.7417],
+            "MO": [-92.2884, 38.4561], "MT": [-110.4544, 46.9219], "NE": [-98.2681, 41.1254],
+            "NV": [-117.0554, 38.3135], "NH": [-71.5639, 43.4525], "NJ": [-74.5210, 40.2989],
+            "NM": [-106.2485, 34.8405], "NY": [-74.9481, 42.1657], "NC": [-79.8064, 35.6301],
+            "ND": [-99.7840, 47.5289], "OH": [-82.9071, 40.4174], "OK": [-96.9289, 35.5653],
+            "OR": [-122.0709, 44.5720], "PA": [-77.2098, 40.5908], "RI": [-71.5118, 41.6809],
+            "SC": [-80.9450, 33.8569], "SD": [-99.4388, 44.2998], "TN": [-86.6923, 35.7478],
+            "TX": [-97.5635, 31.0545], "UT": [-111.8624, 40.1500], "VT": [-72.7107, 44.0459],
+            "VA": [-78.1700, 37.7693], "WA": [-121.4905, 47.4009], "WV": [-80.9545, 38.4912],
+            "WI": [-89.6165, 44.2685], "WY": [-107.3025, 42.7560]
+        };
+
+        Promise.all([
+            d3.csv("state_to_state_2017-2023.csv"),
+            d3.csv("county_lookup.csv"),
+            d3.csv("county_to_county_2017-2023.csv"),
+            d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json")
+        ]).then(([csvState, csvLookup, csvCounty, topoData]) => {
+            stateData = csvState.map(d => ({ year: +d.year, origin: d.origin, destination: d.destination, count: +d.count }));
+            csvLookup.forEach(d => { countyLookup[String(d.county_fips).padStart(5, '0')] = { name: d.county_name, state: d.state }; });
+            countyData = csvCounty.map(d => ({ year: +d.year, origin: String(d.origin).padStart(5, '0'), destination: String(d.destination).padStart(5, '0'), count: +d.count }));
+
+            initMap(topoData);
+            updateDashboard(currentYear);
+
+            d3.select("#year-slider").on("input", function() {
+                currentYear = +this.value;
+                d3.select("#year-label").text(currentYear);
+                d3.select("#active-year-display").text(currentYear);
+                updateDashboard(currentYear);
+            });
+
+            d3.select("#metric-select").on("change", () => updateDashboard(currentYear));
+            d3.select("#dataset-select").on("change", () => updateDashboard(currentYear));
+            d3.select("#reset-btn").on("click", () => {
+                selectedStateAbbr = null;
+                d3.select("#selected-state-display").text("National Overview");
+                d3.select("#reset-btn").style("display", "none");
+                updateDashboard(currentYear);
+            });
+        });
+
+        function initMap(topoData) {
+            const svg = d3.select("#canvas");
+            projection = d3.geoAlbersUsa().scale(1200).translate([480, 300]);
+            path = d3.geoPath().projection(projection);
+
+            const states = topojson.feature(topoData, topoData.objects.states).features;
+
+            svg.append("g").attr("id", "states-group")
+                .selectAll("path")
+                .data(states)
+                .enter().append("path")
+                .attr("class", "state-path")
+                .attr("d", path)
+                .attr("fill", "#141e38")
+                .attr("stroke", "#26375c")
+                .attr("stroke-width", 0.8)
+                .on("mouseover", function(event, d) {
+                    const abbr = fipsToAbbr[String(d.id).padStart(2, '0')];
+                    d3.select("#tooltip").style("display", "block")
+                           .html(`<strong>${abbr || 'State'}</strong><br/><span style="color:var(--accent-blue);">Click to isolate flows</span>`);
+                })
+                .on("mousemove", event => d3.select("#tooltip").style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 25) + "px"))
+                .on("mouseout", () => d3.select("#tooltip").style("display", "none"))
+                .on("click", (event, d) => {
+                    const abbr = fipsToAbbr[String(d.id).padStart(2, '0')];
+                    if (abbr) {
+                        selectedStateAbbr = abbr;
+                        d3.select("#selected-state-display").text(`State Focus: ${abbr}`);
+                        d3.select("#reset-btn").style("display", "inline-block");
+                        updateDashboard(currentYear);
+                    }
+                });
+
+            svg.append("g").attr("id", "arcs-group");
+        }
+
+        function updateDashboard(year) {
+            const datasetType = d3.select("#dataset-select").node().value;
+            const metric = d3.select("#metric-select").node().value;
+            const svg = d3.select("#canvas");
+            const arcsGroup = svg.select("#arcs-group");
+            arcsGroup.html("");
+
+            if (datasetType === 'state') {
+                const yearFiltered = stateData.filter(d => d.year === year);
+                let displayFlows = selectedStateAbbr ? yearFiltered.filter(d => d.origin === selectedStateAbbr || d.destination === selectedStateAbbr) : yearFiltered;
+                
+                d3.select("#rankings-title").text(selectedStateAbbr ? `Corridors for ${selectedStateAbbr}` : "Top Migration Corridors");
+                d3.select("#kpi-total-flows").text(d3.format(",.0f")(d3.sum(displayFlows, d => d.count)));
+
+                const stateValues = {};
+                d3.rollup(displayFlows, v => d3.sum(v, d => d.count), d => metric === 'inflow' ? d.destination : d.origin)
+                  .forEach((val, key) => { stateValues[key] = val; });
+
+                const sortedStates = Object.entries(stateValues).sort((a, b) => b[1] - a[1]);
+                if (sortedStates.length > 0) d3.select("#kpi-top-hub").text(sortedStates[0][0]);
+
+                const maxVal = d3.max(Object.values(stateValues)) || 100000;
+                const colorScale = d3.scaleSequential(d3.interpolateBlues).domain([0, maxVal * 0.75]);
+
+                svg.selectAll(".state-path")
+                    .transition().duration(300)
+                    .attr("fill", d => {
+                        const abbr = fipsToAbbr[String(d.id).padStart(2, '0')];
+                        if (selectedStateAbbr && abbr === selectedStateAbbr) return "#0284c7";
+                        return colorScale(stateValues[abbr] || 0);
+                    });
+
+                const arcsToDraw = (selectedStateAbbr ? displayFlows : yearFiltered).sort((a, b) => b.count - a.count).slice(0, selectedStateAbbr ? 25 : 18);
+                const strokeScale = d3.scaleLinear().domain([0, d3.max(arcsToDraw, d => d.count) || 1]).range([1, 4]);
+
+                arcsToDraw.forEach(d => {
+                    const p1 = projection(stateCoords[d.origin]), p2 = projection(stateCoords[d.destination]);
+                    if (p1 && p2) {
+                        const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+                        const dr = Math.sqrt(dx * dx + dy * dy) * 1.3;
+                        let color = "var(--accent-blue)";
+                        if (selectedStateAbbr) color = (d.destination === selectedStateAbbr) ? "var(--inflow-color)" : "var(--outflow-color)";
+                        
+                        arcsGroup.append("path")
+                            .attr("class", "flow-arc")
+                            .attr("d", `M${p1[0]},${p1[1]}A${dr},${dr} 0 0,1 ${p2[0]},${p2[1]}`)
+                            .attr("stroke", color)
+                            .attr("stroke-width", strokeScale(d.count));
+                    }
+                });
+
+                const rankingsContainer = d3.select("#rankings-list");
+                rankingsContainer.html("");
+                [...displayFlows].sort((a, b) => b.count - a.count).slice(0, 6).forEach((item, i) => {
+                    rankingsContainer.append("div")
+                        .attr("class", "corridor-item")
+                        .html(`<span>${i+1}. ${item.origin} → ${item.destination}</span> <strong style="color: var(--accent-blue);">${d3.format(",.0f")(item.count)}</strong>`);
+                });
+
+            } else {
+                d3.select("#rankings-title").text("Top County Corridors");
+                const yearFiltered = countyData.filter(d => d.year === year);
+                d3.select("#kpi-total-flows").text(d3.format(",.0f")(d3.sum(yearFiltered, d => d.count)));
+                d3.select("#kpi-top-hub").text("County View");
+
+                svg.selectAll(".state-path").transition().duration(300).attr("fill", "#141e38");
+
+                const rankingsContainer = d3.select("#rankings-list");
+                rankingsContainer.html("");
+                [...yearFiltered].sort((a, b) => b.count - a.count).slice(0, 6).forEach((item, i) => {
+                    const orig = countyLookup[item.origin] ? `${countyLookup[item.origin].name}, ${countyLookup[item.origin].state}` : item.origin;
+                    const dest = countyLookup[item.destination] ? `${countyLookup[item.destination].name}, ${countyLookup[item.destination].state}` : item.destination;
+                    rankingsContainer.append("div")
+                        .attr("class", "corridor-item")
+                        .html(`<span style="font-size:0.78rem;">${i+1}. ${orig} → ${dest}</span> <strong style="color: var(--accent-blue);">${d3.format(",.0f")(item.count)}</strong>`);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
